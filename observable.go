@@ -22,6 +22,8 @@ type Observable[T any] interface {
 	// Observable implementations are allowed to call 'next' and 'complete'
 	// from any goroutine, but never concurrently.
 	Observe(ctx context.Context, next func(T), complete func(error))
+
+	Op(same OpToSame[T]) Observable[T]
 }
 
 // FuncObservable implements the Observable interface with a function.
@@ -56,4 +58,8 @@ type FuncObservable[T any] func(context.Context, func(T), func(error))
 
 func (f FuncObservable[T]) Observe(ctx context.Context, next func(T), complete func(error)) {
 	f(ctx, next, complete)
+}
+
+func (f FuncObservable[T]) Op(same OpToSame[T]) Observable[T] {
+	return same.Operator(f)
 }

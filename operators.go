@@ -10,6 +10,14 @@ import (
 	"golang.org/x/time/rate"
 )
 
+type OpToSame[T any] interface {
+	Operator(Observable[T]) Observable[T]
+}
+
+type OpToOther[A, B any] interface {
+	Operator(Observable[A]) Observable[B]
+}
+
 //
 // Operators transform the observable stream.
 //
@@ -28,6 +36,18 @@ func Map[A, B any](src Observable[A], apply func(A) B) Observable[B] {
 		})
 }
 
+type MapOp[T any] func(T) T
+
+func (m MapOp[T]) Operator(o Observable[T]) Observable[T] {
+	return Map[T, T](o, m)
+}
+
+type MapOp2[A, B any] func(A) B
+
+func (m MapOp2[A, B]) Operator(o Observable[A]) Observable[B] {
+	return Map[A, B](o, m)
+}
+
 // Filter only emits the values for which the provided predicate returns true.
 //
 //	Filter(Range(1,4), func(x int) int { return x%2 == 0 })
@@ -44,6 +64,12 @@ func Filter[T any](src Observable[T], pred func(T) bool) Observable[T] {
 				},
 				complete)
 		})
+}
+
+type FilterOp[T any] func(T) bool
+
+func (m FilterOp[T]) Operator(o Observable[T]) Observable[T] {
+	return Filter[T, T](o, m)
 }
 
 // Reduce takes an initial state, and a function 'reduce' that is called on each element
@@ -68,6 +94,20 @@ func Reduce[Item, Result any](src Observable[Item], init Result, reduce func(Res
 					complete(err)
 				})
 		})
+}
+
+type ReduceOp[T any] func(T, T) T
+
+func (m ReduceOp[T]) Operator(o Observable[T]) Observable[T] {
+	var init T
+	return Reduce[T, T](o, init, m)
+}
+
+type ReduceOp2[Item, Result any] func(Result, Item) Result
+
+func (m ReduceOp2[Item, Result]) Operator(o Observable[Item]) Observable[Result] {
+	var init Result
+	return Reduce[Item, Result](o, init, m)
 }
 
 // Concat takes one or more observable of the same type and emits the items from each of
@@ -96,6 +136,12 @@ func Concat[T any](srcs ...Observable[T]) Observable[T] {
 				complete(nil)
 			}()
 		})
+}
+
+type ConcatOp[T any] []Observable[T]
+
+func (m ConcatOp[T]) Operator(o Observable[T]) Observable[T] {
+	return Concat[T, T](append(m, o)...)
 }
 
 // FlatMap applies a function that returns an observable of Bs to the source observable of As.
@@ -157,8 +203,21 @@ func Distinct[T comparable](src Observable[T]) Observable[T] {
 	})
 }
 
+type DistinctOp[T comparable] struct{}
+
+func (m DistinctOp[T]) Operator(o Observable[T]) Observable[T] {
+	return Distinct(o)
+}
+
 // RetryFunc decides whether the processing should be retried given the error
 type RetryFunc func(err error) bool
+
+type RetryFuncOp[T any] func(err error) bool
+
+func (m RetryFuncOp[T]) Operator(o Observable[T]) Observable[T] {
+	var fc func(err error) bool = m
+	return Retry(o, fc)
+}
 
 // Retry resubscribes to the observable if it completes with an error.
 func Retry[T any](src Observable[T], shouldRetry RetryFunc) Observable[T] {
@@ -258,6 +317,15 @@ func Throttle[T any](src Observable[T], ratePerSecond float64, burst int) Observ
 		})
 }
 
+type ThrottleOp[T any] struct {
+	RatePerSecond float64
+	Burst         int
+}
+
+func (t ThrottleOp[T]) Operator(o Observable[T]) Observable[T] {
+	return Throttle(o, t.RatePerSecond, t.Burst)
+}
+
 // Debounce emits an item only after the specified duration has lapsed since
 // the previous item was emitted. Only the latest item is emitted.
 //
@@ -311,6 +379,12 @@ func Debounce[T any](src Observable[T], duration time.Duration) Observable[T] {
 				}
 			}()
 		})
+}
+
+type DebounceOp[T any] time.Duration
+
+func (d DebounceOp[T]) Operator(o Observable[T]) Observable[T] {
+	return Debounce(o, time.Duration(d))
 }
 
 // Buffer collects items into a buffer using the given buffering function and
@@ -380,4 +454,14 @@ func Buffer[Buf any, T any](
 
 		})
 
+}
+
+type BufferOp[Buf any, T any] struct {
+	BufSize  int
+	WaitTime time.Duration
+	Add      func(Buf, T) Buf
+}
+
+func (d BufferOp[Buf, T]) Operator(o Observable[T]) Observable[Buf] {
+	return Buffer(o, d.BufSize, d.WaitTime, d.Add)
 }
